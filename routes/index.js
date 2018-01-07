@@ -1,6 +1,8 @@
 var express = require('express');
 var router = express.Router();
 var request = require('request');
+var Promise = require('bluebird');
+var rp = require('request-promise');
 
 var config = require('../config/configuration');
 
@@ -12,6 +14,8 @@ router.post('/webhook', (req, res) => {
 
 // Checks this is an event from a page subscription
     if (body.object === 'page') {
+        // Returns a '200 OK' response to all requests
+        res.status(200).send('EVENT_RECEIVED');
 
         // Iterates over each entry - there may be multiple if batched
         body.entry.forEach(function(entry) {
@@ -24,16 +28,14 @@ router.post('/webhook', (req, res) => {
             let sender_psid = webhook_event.sender.id;
             console.log('Sender PSID: ' + sender_psid);
 
-            if (webhook_event.message) {
-                handleMessage(sender_psid, webhook_event.message);
-            } else if (webhook_event.postback) {
-                handlePostback(sender_psid, webhook_event.postback);
-            }
-
+            GetUserDetails(sender_psid)
+                .then((user) => {
+                    if (webhook_event.message) {
+                        handleMessage(sender_psid, webhook_event.message, user);
+                    }
+                });
         });
 
-        // Returns a '200 OK' response to all requests
-        res.status(200).send('EVENT_RECEIVED');
     } else {
         // Returns a '404 Not Found' if event is not from a page subscription
         res.sendStatus(404);
@@ -41,7 +43,7 @@ router.post('/webhook', (req, res) => {
 
 });
 
-function handleMessage(sender_psid, received_message) {
+function handleMessage(sender_psid, received_message, user) {
 
     let response;
 
@@ -49,9 +51,7 @@ function handleMessage(sender_psid, received_message) {
     if (received_message.text) {
 
         // Create the payload for a basic text message
-        response = {
-            "text": `You sent the message: "${received_message.text}". Now send me an image!`
-        }
+        response = `Hi ${user.first_name}. CDS bot...You sent the message: "${received_message.text}".`;
     }
 
     // Sends the response message
@@ -80,7 +80,27 @@ function callSendAPI(sender_psid, response) {
         "recipient": {
             "id": sender_psid
         },
-        "message": response
+        "message": {
+            text: response,
+            quick_replies: [
+                {
+                    "content_type":"text",
+                    "title":"Test",
+                    "payload":"Test"
+                },
+                {
+                    "content_type":"text",
+                    "title":"Eman",
+                    "payload":"Eman"
+                },
+                {
+                    "content_type":"text",
+                    "title":"Button",
+                    "payload":"Button"
+                }
+            ],
+            metadata: "Eman 123"
+        }
     };
 
     // Send the HTTP request to the Messenger Platform
@@ -129,5 +149,29 @@ router.get('/webhook', (req, res) => {
         return res.sendStatus(403);
     }
 });
+
+var GetUserDetails = function(userid) {
+    console.log(`GetUserDetails: ${userid}`);
+    return new Promise((resolve, reject) => {
+
+        let options = {
+            method: 'GET',
+            uri: config.fb.getUserInfoApi + userid + "?access_token=" + config.fb.token,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            json: true
+        };
+
+        rp(options)
+            .then((user) => {
+                console.log("User details: ", JSON.stringify(user));
+                return resolve(user);
+            }).catch((err) => {
+            console.log("Error getting user");
+            return reject(err);
+        })
+    });
+};
 
 module.exports = router;
