@@ -6,7 +6,9 @@ var config = require('config/configuration');
 
 router.post('/webhook', (req, res) => {
 
+
     let body = req.body;
+    console.log("Received request: ", JSON.stringify(body));
 
 // Checks this is an event from a page subscription
     if (body.object === 'page') {
