@@ -1,5 +1,8 @@
 var express = require('express');
 var router = express.Router();
+var request = require('request');
+
+var config = require('config/configuration');
 
 router.post('/webhook', (req, res) => {
 
@@ -9,12 +12,22 @@ router.post('/webhook', (req, res) => {
     if (body.object === 'page') {
 
         // Iterates over each entry - there may be multiple if batched
-        body.entry.forEach(function (entry) {
+        body.entry.forEach(function(entry) {
 
-            // Gets the message. entry.messaging is an array, but
-            // will only ever contain one message, so we get index 0
+            // Gets the body of the webhook event
             let webhook_event = entry.messaging[0];
             console.log(webhook_event);
+
+            // Get the sender PSID
+            let sender_psid = webhook_event.sender.id;
+            console.log('Sender PSID: ' + sender_psid);
+
+            if (webhook_event.message) {
+                handleMessage(sender_psid, webhook_event.message);
+            } else if (webhook_event.postback) {
+                handlePostback(sender_psid, webhook_event.postback);
+            }
+
         });
 
         // Returns a '200 OK' response to all requests
@@ -25,6 +38,64 @@ router.post('/webhook', (req, res) => {
     }
 
 });
+
+function handleMessage(sender_psid, received_message) {
+
+    let response;
+
+    // Check if the message contains text
+    if (received_message.text) {
+
+        // Create the payload for a basic text message
+        response = {
+            "text": `You sent the message: "${received_message.text}". Now send me an image!`
+        }
+    }
+
+    // Sends the response message
+    callSendAPI(sender_psid, response);
+}
+
+function handlePostback(sender_psid, received_postback) {
+    let response;
+
+    // Get the payload for the postback
+    let payload = received_postback.payload;
+
+    // Set the response based on the postback payload
+    if (payload === 'yes') {
+        response = { "text": "Thanks!" }
+    } else if (payload === 'no') {
+        response = { "text": "Oops, try sending another image." }
+    }
+    // Send the message to acknowledge the postback
+    callSendAPI(sender_psid, response);
+}
+
+function callSendAPI(sender_psid, response) {
+    // Construct the message body
+    let request_body = {
+        "recipient": {
+            "id": sender_psid
+        },
+        "message": response
+    };
+
+    // Send the HTTP request to the Messenger Platform
+    request({
+        "uri": config.fb.apiUrl,
+        "qs": { "access_token": config.fb.token },
+        "method": "POST",
+        "json": request_body
+    }, (err, res, body) => {
+        if (!err) {
+            console.log('message sent!');
+            console.log("Message response: ", JSON.stringify(res));
+        } else {
+            console.error("Unable to send message:" + err);
+        }
+    });
+}
 
 // Adds support for GET requests to our webhook
 router.get('/webhook', (req, res) => {
